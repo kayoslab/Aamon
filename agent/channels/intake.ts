@@ -73,11 +73,16 @@ export default defineChannel({
         `[Automated engagement intake]\n` +
         `Operating mode: ${mode}.${name ? ` Engagement label: ${name}.` : ""}\n` +
         `${recipientLine}${unattendedRules}\n\n` +
-        `Run this engagement end to end: read the briefing below, record the engagement (record_engagement), ` +
-        `plan, load the relevant domain skill(s), test within scope (check_scope), record findings ` +
-        `(record_finding), and finish by calling finalize_engagement — the ONLY way to deliver the report ` +
-        `and notify the team; NEVER hand-write engagement/report.md yourself. When you have launched the ` +
-        `workstreams, acknowledge and let the background tasks run to completion.\n\n` +
+        `Run this engagement end to end YOURSELF: read the briefing below, record the engagement ` +
+        `(record_engagement), ENUMERATE the full attack surface first (crawl, historical URLs, content and ` +
+        `parameter discovery, fingerprinting), then build a broad plan (update_plan) with a concrete task ` +
+        `per endpoint x vulnerability class and per abuse case. Then WORK IT ACROSS MULTIPLE PASSES — test ` +
+        `each task within scope (check_scope), record findings (record_finding), and after every pass update ` +
+        `the plan and add the new leads you found. Do NOT stop after one pass. Finishing fast with few ` +
+        `findings on a real web app means you stopped too early — go back and go deeper. Deliver ONLY by ` +
+        `calling finalize_engagement (never hand-write engagement/report.md); it enforces a coverage gate and ` +
+        `will refuse until the plan is broad enough (enough completed tasks, across enough vulnerability ` +
+        `classes, over enough of the surface), so keep working and expanding the plan until it passes.\n\n` +
         `--- BRIEFING ---\n${briefing}`;
 
       const address = `engagement-${crypto.randomUUID()}`;

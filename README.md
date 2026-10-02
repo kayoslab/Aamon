@@ -171,8 +171,17 @@ allowlist variables below.
 | `SLACK_BOT_TOKEN` | Only if you manage the Slack app yourself instead of via Vercel Connect. |
 | `NVD_API_KEY` | Optional. Raises the NVD CVE API rate limit for `cve-hunting`. |
 | `WPSCAN_API_TOKEN` | Optional. Full WordPress vulnerability data for `wpscan`. |
+| `AAMON_COVERAGE_GATE` | Optional. `off` disables the finalize coverage gate (default `on`). |
+| `AAMON_MIN_DONE_TASKS` | Optional. Completed plan tasks required to finalize (default `8`). |
+| `AAMON_MIN_CLASSES` | Optional. Distinct vulnerability classes that must be tested (default `5` of 8). |
+| `AAMON_MIN_ENDPOINTS` | Optional. Distinct endpoints that must be exercised (default `5`; lower for tiny targets). |
 
-Set them with `npx eve env add <NAME>` or in the Vercel project settings.
+The coverage gate is the depth guardrail: `finalize_engagement` refuses until the plan is broad enough,
+so an autonomous run can't finish after a shallow sweep. It gates on coverage and effort, never on
+finding count. Tune the thresholds to the target (a single-page site may need `AAMON_MIN_ENDPOINTS=1`).
+
+Set variables with `vercel env add <NAME>` or in the Vercel project settings, then redeploy so the
+running deployment picks them up.
 
 ## Choosing the model
 

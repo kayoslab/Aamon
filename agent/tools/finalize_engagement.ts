@@ -4,6 +4,7 @@ import { readEngagement, readFindings, logActivity, TestedAreaSchema, REPORT_PAT
 import { buildReportMarkdown, severityCounts } from "../lib/report";
 import { postSlackNotification } from "../lib/notify";
 import { readPlan, openTasks } from "../lib/plan";
+import { evaluateCoverage } from "../lib/coverage";
 
 /**
  * The single, mandatory closing step of every engagement: compile the report
@@ -57,6 +58,32 @@ export default defineTool({
     const engagement = await readEngagement(sandbox);
     const findings = await readFindings(sandbox);
     const lang = engagement?.reportLanguage ?? "en";
+
+    // Coverage gate: a fully-worked plan is not enough — it must be a BROAD plan.
+    // This is the machine-enforced depth guardrail that replaces human-approval
+    // friction, so an autonomous run can't finish after a shallow sweep. It gates
+    // on coverage, never on finding count. Tunable via AAMON_* env (see lib/coverage).
+    const coverage = evaluateCoverage(plan, findings);
+    if (!coverage.pass) {
+      await logActivity(
+        sandbox,
+        `finalize blocked by coverage gate: done=${coverage.doneCount} classes=${coverage.classesCovered.length} endpoints=${coverage.endpoints}`,
+      );
+      return {
+        finalized: false,
+        reason:
+          "Coverage gate — the engagement is not broad enough to finalize yet. " +
+          coverage.reasons.join(" ") +
+          " Expand the plan with update_plan, complete those tests across several passes, then finalize. " +
+          "This gate is tunable via AAMON_COVERAGE_GATE / AAMON_MIN_DONE_TASKS / AAMON_MIN_CLASSES / AAMON_MIN_ENDPOINTS.",
+        coverage: {
+          completedTasks: coverage.doneCount,
+          classesCovered: coverage.classesCovered,
+          classesMissing: coverage.classesMissing,
+          endpointsTested: coverage.endpoints,
+        },
+      };
+    }
 
     const report = buildReportMarkdown(engagement, findings, { managementSummary, recommendations, methodology, testedAreas }, lang);
     await sandbox.writeTextFile({ path: REPORT_PATH, content: report });

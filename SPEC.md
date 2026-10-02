@@ -125,7 +125,18 @@ Finalize only when all of the following hold (otherwise keep going, or record th
 - anything unreached is logged as an itemized manual follow-up with the exact next step and the reason
   it stopped.
 
-A shallow breadth sweep is not completion. If access came easily, assume there is more and dig.
+A shallow breadth sweep is not completion, and finishing fast is a failure mode: a real web application
+almost never yields its whole story in one pass or to a single finding. If access came easily, assume
+there is more and dig.
+
+`finalize_engagement` enforces this structurally so autonomy does not drift into shallowness. Beyond
+refusing while any plan task is open, it runs a **coverage gate**: it refuses until the plan is broad
+enough — a minimum number of completed tasks, spread across a minimum number of the required
+vulnerability classes (authentication, access control, injection, SSRF, client-side, API, known-CVE,
+business-logic), over a minimum number of distinct endpoints. The gate measures coverage and effort, not
+finding count, so a thorough run that legitimately finds little still passes and no false positive is
+ever manufactured to clear it. Thresholds are operator-tunable (`AAMON_COVERAGE_GATE`,
+`AAMON_MIN_DONE_TASKS`, `AAMON_MIN_CLASSES`, `AAMON_MIN_ENDPOINTS`).
 
 ## 7. Pacing
 

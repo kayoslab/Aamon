@@ -37,7 +37,9 @@ export default defineTool({
       message:
         remaining > 0
           ? `${remaining} task(s) still open/in_progress. Keep working, and add any new leads you found before the next pass.`
-          : "All tasks resolved (done/deferred). If no new leads remain after a review pass, you may finalize_engagement.",
+          : "All tasks resolved (done/deferred). Do a review pass for new leads. Note: finalize_engagement " +
+            "also runs a coverage gate (enough completed tasks, across enough vulnerability classes, over " +
+            "enough endpoints), so if the plan is still narrow, broaden it before finalizing.",
     };
   },
 });
