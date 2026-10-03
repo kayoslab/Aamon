@@ -1,5 +1,6 @@
 import { defineTool } from "eve/tools";
 import { EngagementSchema, writeEngagement, logActivity, BRIEFING_PATH } from "../lib/engagement";
+import { initCampaign } from "../lib/campaign";
 
 /**
  * Intake for the briefing / checklist. The model reads the briefing the user
@@ -19,6 +20,9 @@ export default defineTool({
   async execute(engagement, ctx) {
     const sandbox = await ctx.getSandbox();
     await writeEngagement(sandbox, engagement);
+    // Start the phased campaign (planning phase). The engagement now runs as a
+    // multi-phase campaign gated through planning -> recon -> triage -> exploitation -> reporting.
+    await initCampaign(sandbox);
 
     const list = (xs: string[]) => (xs.length ? xs.map((s) => `- ${s}`).join("\n") : "- (none)");
     const auth = engagement.authorization;

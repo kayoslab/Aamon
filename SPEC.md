@@ -98,13 +98,29 @@ generator, or minimal exploit proof-of-concept for the specific target. Follow e
 demonstrated access rather than stopping at "potentially vulnerable." Save what you build under
 `engagement/tools/`, within scope and the do-not-take-it-down rule.
 
-## 5. Methodology
+## 5. Methodology — a phased campaign
 
-Track the work in the **living test plan** (`update_plan`, see `engagement-planning`): build the backlog
-of concrete tests before deep testing, front-load the initial-access and privilege-escalation goals,
-work it across **multiple iterations**, and expand it each pass from what you learn.
-`finalize_engagement` refuses while any task is open or in_progress, so a single sweep cannot end the
-engagement — real depth comes from the second and third passes.
+An engagement is a sustained, multi-hour (often multi-day) **campaign** run in one durable session (its
+sandbox persists across invocations). It is forced through five phases, each with machine-checked exit
+criteria, so it cannot finish after a shallow sweep:
+
+1. **Planning** — a large, concrete attack plan (`update_plan`), front-loading initial-access and
+   privilege-escalation. Leaving requires a minimum number of tasks.
+2. **Recon** — fan out across parallel subagents (default up to 4) to build the complete picture:
+   subdomains, deep crawl, historical URLs, content and parameter discovery, JS/API enumeration, precise
+   fingerprinting; each worker records findings with `record_recon`. The big scans run **detached**
+   (`scan_start`) until complete. Leaving requires enough distinct endpoints mapped and every launched
+   scan finished — this is what gives the campaign its hours.
+3. **Triage** — the recon corpus becomes a ranked exploitation backlog (`record_lead`): CVEs (CISA KEV,
+   then EPSS), weaknesses, and chains. Leaving requires a minimum number of leads.
+4. **Exploitation** — work the leads to demonstrated, non-destructive access; escalate every foothold;
+   chain toward control. Leaving requires every lead resolved and the coverage gate met.
+5. **Reporting** — consolidate and finalize.
+
+`advance_phase` enforces the transitions; `finalize_engagement` only closes from reporting. Thresholds
+are operator-tunable (`AAMON_MIN_PLAN_TASKS`, `AAMON_MIN_RECON_ENDPOINTS`, `AAMON_MIN_RECON_SCANS`,
+`AAMON_MIN_LEADS`). Within each phase, track and expand the **living test plan** (`engagement-planning`)
+across multiple iterations — real depth comes from the second and third passes, not the first.
 
 Recon → enumeration → vulnerability analysis → initial access (where authorized) → privilege escalation
 → consolidation → **chaining** → iterate. It is not linear: new access reopens earlier phases. For every

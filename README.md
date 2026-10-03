@@ -33,6 +33,25 @@ Aamon optimizes for **access**, not for a long list of hygiene nits. Its objecti
 Misconfigurations and missing headers still get recorded, but they are footnotes. A proven path in,
 demonstrated with a deliberately minimal and non-destructive proof, is the headline.
 
+## How it runs — a phased campaign
+
+An engagement is a **campaign**, not a quick scan: a sustained, multi-hour (often multi-day) operation
+run in one durable session whose sandbox persists across invocations. It moves through five phases, each
+gated so the next can't start until the current one's exit criteria are met:
+
+1. **Planning** — build a large, concrete attack plan.
+2. **Recon** — fan out across up to four parallel subagents, enumerate the whole surface, and run the big
+   scans detached until they finish. The gate won't advance until enough of the surface is mapped and
+   every launched scan has completed, which is what makes a campaign take hours.
+3. **Triage** — turn the recon corpus into a ranked exploitation backlog: CVEs (KEV/EPSS-first),
+   weaknesses, and chains.
+4. **Exploitation** — work the leads to demonstrated access, escalate every foothold, and chain toward
+   control. The gate requires every lead resolved.
+5. **Reporting** — consolidate the chain and deliver.
+
+`finalize_engagement` only closes from the reporting phase, so the run cannot finish after a shallow
+sweep. The phase thresholds are env-tunable (see Configuration).
+
 ## How it behaves
 
 Aamon is **autonomous by default**. It does not stop to ask permission for each exploit — within an
@@ -94,7 +113,8 @@ agent/
 ├── agent.ts               model selection and per-session cost/time limits
 ├── sandbox.ts             disposable /workspace with a baked web-pentest toolkit
 ├── channels/              how you reach it: slack, HTTP intake, and the eve session API
-├── tools/                 scope gate, engagement/plan/finding records, scans, finalize
+├── tools/                 scope gate, engagement/plan/recon/lead/finding records, phases, scans, finalize
+├── schedules/             campaign heartbeat (resumes a parked campaign on a cadence)
 ├── skills/                the loadable knowledge above
 ├── lib/                   engagement model, report builder, scope and notify helpers
 └── hooks/                 audit log of every command, tool, and result
@@ -175,6 +195,11 @@ allowlist variables below.
 | `AAMON_MIN_DONE_TASKS` | Optional. Completed plan tasks required to finalize (default `8`). |
 | `AAMON_MIN_CLASSES` | Optional. Distinct vulnerability classes that must be tested (default `5` of 8). |
 | `AAMON_MIN_ENDPOINTS` | Optional. Distinct endpoints that must be exercised (default `5`; lower for tiny targets). |
+| `AAMON_MIN_PLAN_TASKS` | Optional. Plan tasks required to leave the planning phase (default `20`). |
+| `AAMON_MIN_RECON_ENDPOINTS` | Optional. Distinct endpoints required to leave recon (default `50`). |
+| `AAMON_MIN_RECON_SCANS` | Optional. Detached scans that must be launched and finished before triage (default `3`). |
+| `AAMON_MIN_LEADS` | Optional. Ranked exploitation leads required to leave triage (default `8`). |
+| `AAMON_CAMPAIGN_CHANNEL_ID` / `AAMON_CAMPAIGN_THREAD_TS` | Optional. The Slack thread of a running campaign; set both so the heartbeat schedule resumes it if it parks. Unset, the heartbeat does nothing. |
 
 The coverage gate is the depth guardrail: `finalize_engagement` refuses until the plan is broad enough,
 so an autonomous run can't finish after a shallow sweep. It gates on coverage and effort, never on

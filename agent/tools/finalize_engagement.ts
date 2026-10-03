@@ -5,6 +5,7 @@ import { buildReportMarkdown, severityCounts } from "../lib/report";
 import { postSlackNotification } from "../lib/notify";
 import { readPlan, openTasks } from "../lib/plan";
 import { evaluateCoverage } from "../lib/coverage";
+import { readCampaign } from "../lib/campaign";
 
 /**
  * The single, mandatory closing step of every engagement: compile the report
@@ -31,7 +32,22 @@ export default defineTool({
   async execute({ managementSummary, recommendations, methodology, testedAreas, note }, ctx) {
     const sandbox = await ctx.getSandbox();
 
-    // Gate: a plan must exist and be fully worked before an engagement can finalize.
+    // Gate 0: the campaign must have reached the reporting phase. This forces the
+    // run through recon -> triage -> exploitation before it can close, so it can't
+    // finish after a single shallow sweep.
+    const campaign = await readCampaign(sandbox);
+    if (campaign && campaign.phase !== "reporting") {
+      return {
+        finalized: false,
+        reason:
+          `The campaign is in the '${campaign.phase}' phase, not 'reporting'. Work the phases and use ` +
+          `advance_phase to progress (planning -> recon -> triage -> exploitation -> reporting). You can only ` +
+          `finalize from the reporting phase.`,
+        phase: campaign.phase,
+      };
+    }
+
+    // Gate 1: a plan must exist and be fully worked before an engagement can finalize.
     // This forces an explicit plan and real iteration instead of a single shallow pass.
     const plan = await readPlan(sandbox);
     if (plan.length === 0) {

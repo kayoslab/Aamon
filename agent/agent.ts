@@ -24,11 +24,12 @@ export default defineAgent({
   model: "deepseek/deepseek-v4-pro",
   reasoning: "high",
   limits: {
-    // A single engagement can run long and fan out to subagents. Keep a cost
-    // ceiling so an autonomous run cannot spend without bound, and a long
-    // session lifetime so a durable test is not cut off mid-flight. Tune these
-    // per engagement or set to `false` to disable.
-    maxTokenCostUsdPerSession: 150,
+    // A campaign is a multi-hour/multi-day run that fans out to subagents and
+    // runs long detached scans, so it needs headroom. Keep a cost ceiling so an
+    // autonomous run cannot spend without bound, and a long session lifetime so a
+    // durable campaign is not cut off mid-flight (its sandbox persists across
+    // turns and deployments). Tune per engagement or set to `false` to disable.
+    maxTokenCostUsdPerSession: 500,
     sessionTimeoutMs: 7 * 24 * 60 * 60 * 1_000,
   },
 });
