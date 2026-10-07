@@ -120,13 +120,35 @@ endpoints are recorded and every launched scan has finished. Do not short-circui
 then EPSS), every weakness, and every candidate chain — each with the access it would yield and the proof
 it needs. Then `advance_phase` to exploitation.
 
-**4. Exploitation (take control).** Load `initial-access`, then `privilege-escalation`. Work the leads
-highest-priority first, fanning out across distinct targets. Drive each to a demonstrated, non-destructive
-proof of access; escalate every foothold; chain toward full control of the application and its data.
-Update each lead's status with `record_lead` (exploited / ruled_out / deferred) and record every finding
-with `record_finding` (evidence, reproduction, impact, remediation, CVSS 3.1, CWE, OWASP ref). Keep
-expanding the plan as new access opens new surface. The gate requires every lead resolved and the coverage
-gate met before you may advance to reporting.
+**4. Exploitation (take control — a recursive deepening loop, not a single pass).** Load `initial-access`,
+then `privilege-escalation`. This phase is a **worklist loop over a tree of areas of interest**, and depth
+matters more than breadth: follow a promising thread all the way down before you broaden.
+
+- **Seed the frontier.** For each top lead, `open_area` — it records the area as a plan task and writes the
+  worker's brief (the origin, the relevant slice of recon, the hypothesis, scope) to a file. It returns a
+  `dispatchMessage`.
+- **Work each area in a FRESH context.** Hand that `dispatchMessage` to the built-in `agent` tool. The
+  worker starts clean — it does not inherit your history — and gets its context from the brief file and the
+  shared sandbox (`engagement/recon/`, `engagement/findings/`). It drives the area to a demonstrated,
+  non-destructive proof, records verified findings with `record_finding`, and reports any deeper
+  sub-problem with `record_subarea` instead of chasing it. One origin per worker (shared egress IP / one
+  rate-limit bucket), so do not fan many workers at the same host at once.
+- **Recurse by deepening the tree.** When a worker completes, read its `engagement/areas/<id>/discovered.jsonl`,
+  and for each sub-area worth pursuing call `open_area` again with `parentId` set to that area — a child,
+  `depth+1` — then dispatch a fresh worker for it. This is how an area of interest becomes a new sub-plan,
+  and how further workers dig deeper. Depth is capped at **maxDepth 15** (`AAMON_MAX_AREA_DEPTH`); at the
+  cap, record a `deferred` follow-up rather than opening a deeper child. Then mark the parent area `done`
+  with `update_plan` (evidence in the note).
+- **Every verified finding is an area of interest.** A real finding or weakness must spawn its follow-up
+  sub-plan (escalation, chaining, the access it unlocks, adjacent endpoints) — a worker does this with
+  `record_subarea`; you, as the orchestrator, with `open_area(originFindingId=…)`. Do not stop at the first
+  rung.
+- **Keep the loop going until the frontier is empty** — every area `done` or `deferred` — and also update
+  each lead's status with `record_lead` (exploited / ruled_out / deferred). The gate requires every lead
+  resolved and the coverage gate met before you may advance to reporting.
+
+Only the orchestrator owns the plan, the leads, and `open_area`; dispatched workers only test, `record_finding`,
+and `record_subarea`, then report back. That keeps the tree race-free while the depth comes from the data.
 
 **Throughout:** gate every target through `check_scope`. Exploit autonomously — never pause for approval;
 the only actions you hold back are the ones that could take the target down or harm its data, which you

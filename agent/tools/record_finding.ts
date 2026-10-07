@@ -20,6 +20,15 @@ export default defineTool({
     const sandbox = await ctx.getSandbox();
     const id = await appendFinding(sandbox, finding);
     await logActivity(sandbox, `finding recorded ${id}: [${finding.severity}] ${finding.title}`);
-    return { recorded: true, id, path: `engagement/findings/${id}.md` };
+    return {
+      recorded: true,
+      id,
+      path: `engagement/findings/${id}.md`,
+      deepen:
+        `This finding is an area of interest. Unless the thread is exhausted or at max depth, turn it into a ` +
+        `sub-plan: if you are a dispatched worker, call record_subarea (parentAreaId = your area) for each deeper ` +
+        `angle this opens (escalation, chaining, adjacent endpoints, the access it unlocks); if you are the ` +
+        `orchestrator, open_area with originFindingId="${id}" to deep-dive it in a fresh context.`,
+    };
   },
 });

@@ -45,8 +45,14 @@ gated so the next can't start until the current one's exit criteria are met:
    every launched scan has completed, which is what makes a campaign take hours.
 3. **Triage** — turn the recon corpus into a ranked exploitation backlog: CVEs (KEV/EPSS-first),
    weaknesses, and chains.
-4. **Exploitation** — work the leads to demonstrated access, escalate every foothold, and chain toward
-   control. The gate requires every lead resolved.
+4. **Exploitation** — a recursive deepening loop, not a single pass. Each lead (and every verified finding)
+   becomes an *area of interest*: a node in a tree-structured plan, worked by a **fresh-context worker**
+   seeded from a brief file (the originating finding, the relevant slice of recon, the hypothesis, scope).
+   When a worker uncovers a deeper sub-problem it reports it, and the orchestrator opens it as a child area
+   (depth + 1) with its own fresh worker — so an area of interest becomes a new sub-plan and the
+   investigation drills down a thread rather than stopping at the first rung. Depth is capped
+   (`AAMON_MAX_AREA_DEPTH`, default 15: deep rather than wide). The gate requires every lead resolved and
+   the whole area tree drained.
 5. **Reporting** — consolidate the chain and deliver.
 
 `finalize_engagement` only closes from the reporting phase, so the run cannot finish after a shallow
@@ -113,7 +119,8 @@ agent/
 ├── agent.ts               model selection and per-session cost/time limits
 ├── sandbox.ts             disposable /workspace with a baked web-pentest toolkit
 ├── channels/              how you reach it: slack, HTTP intake, and the eve session API
-├── tools/                 scope gate, engagement/plan/recon/lead/finding records, phases, scans, finalize
+├── tools/                 scope gate, engagement/plan/recon/lead/finding records, areas (open_area +
+│                          record_subarea for recursive deepening), phases, scans, finalize
 ├── schedules/             campaign heartbeat (resumes a parked campaign on a cadence)
 ├── skills/                the loadable knowledge above
 ├── lib/                   engagement model, report builder, scope and notify helpers
@@ -127,8 +134,15 @@ agent/
 - **Everything is recorded.** A hook logs every command, tool call, and result to `engagement/audit.log`,
   giving a reproducible trail independent of the model. Engagement artifacts (scope, plan, findings,
   report, tool scripts, scan output) live under `/workspace/engagement/`.
-- **The plan is a gate.** Aamon builds a concrete test backlog first and `finalize_engagement` refuses
-  to close while any task is open, which forces the second and third passes where depth comes from.
+- **The plan is a tree, and a gate.** Aamon builds a concrete test backlog first, and `finalize_engagement`
+  refuses to close while any task is open — which forces the second and third passes where depth comes from.
+  The plan is also a tree: a finding or weakness becomes an *area of interest* (a child node), so the backlog
+  grows itself as the agent learns, and the run can't finish until the whole tree is drained.
+- **Depth lives in the data, not in a stack of agents.** Each area of interest is worked by a fresh-context
+  worker seeded from a brief file (`engagement/areas/<id>/brief.md`) carrying the relevant recon; deeper
+  sub-problems it finds are opened as child areas (up to `AAMON_MAX_AREA_DEPTH`, default 15) with their own
+  fresh workers. The recursion is the growing tree, executed by flat workers — so it drills deep without a
+  nested tree of agent processes or overwhelming a single context.
 - **Long scans don't stall it.** A single blocking scan can exceed the per-invocation time limit, so
   genuinely long runs are launched detached (`scan_start`) and polled (`scan_poll`), surviving restarts.
 - **It fans out.** Independent workstreams run as background subagents across distinct hosts, sharing the
@@ -199,6 +213,7 @@ allowlist variables below.
 | `AAMON_MIN_RECON_ENDPOINTS` | Optional. Distinct endpoints required to leave recon (default `50`). |
 | `AAMON_MIN_RECON_SCANS` | Optional. Detached scans that must be launched and finished before triage (default `3`). |
 | `AAMON_MIN_LEADS` | Optional. Ranked exploitation leads required to leave triage (default `8`). |
+| `AAMON_MAX_AREA_DEPTH` | Optional. Max depth of the recursive area-of-interest tree in exploitation (default `15`). Lower it to stay shallow; raise it to drill deeper. |
 | `AAMON_CAMPAIGN_CHANNEL_ID` / `AAMON_CAMPAIGN_THREAD_TS` | Optional. The Slack thread of a running campaign; set both so the heartbeat schedule resumes it if it parks. Unset, the heartbeat does nothing. |
 
 The coverage gate is the depth guardrail: `finalize_engagement` refuses until the plan is broad enough,
