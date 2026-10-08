@@ -115,11 +115,13 @@ criteria, so it cannot finish after a shallow sweep:
    then EPSS), weaknesses, and chains. Leaving requires a minimum number of leads.
 4. **Exploitation** — a recursive deepening loop. Each lead, and every verified finding, becomes an
    *area of interest*: a node in a tree-structured plan worked by a fresh-context worker seeded from a
-   brief file (origin, relevant recon, hypothesis, scope) via `open_area`. The worker records findings and
-   reports deeper sub-problems with `record_subarea`; the orchestrator opens the worthwhile ones as child
-   areas (depth+1), so a finding becomes a new sub-plan and the run drills a thread deep before broadening.
-   Depth is capped (`AAMON_MAX_AREA_DEPTH`, default 15). Leaving requires every lead resolved, the coverage
-   gate met, and the whole area tree drained.
+   brief file (origin, relevant recon, hypothesis, scope) via `open_area`. A shallow area (depth ≤
+   `AAMON_SUBPLAN_DEPTH`, default 7) plans itself first — the worker lays out a scoped sub-plan with
+   `plan_area` and works it; deeper areas work dynamically. The worker records findings and reports deeper
+   sub-problems with `record_subarea`; the orchestrator opens the worthwhile ones as child areas (depth+1),
+   so a finding becomes a new sub-plan and the run drills a thread deep before broadening. Depth is capped
+   (`AAMON_MAX_AREA_DEPTH`, default 15). Leaving requires every lead resolved, the coverage gate met, and
+   the whole area tree drained.
 5. **Reporting** — consolidate and finalize.
 
 `advance_phase` enforces the transitions; `finalize_engagement` only closes from reporting. Thresholds

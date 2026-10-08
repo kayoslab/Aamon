@@ -132,7 +132,9 @@ matters more than breadth: follow a promising thread all the way down before you
   shared sandbox (`engagement/recon/`, `engagement/findings/`). It drives the area to a demonstrated,
   non-destructive proof, records verified findings with `record_finding`, and reports any deeper
   sub-problem with `record_subarea` instead of chasing it. One origin per worker (shared egress IP / one
-  rate-limit bucket), so do not fan many workers at the same host at once.
+  rate-limit bucket), so do not fan many workers at the same host at once. An area at depth ≤
+  `AAMON_SUBPLAN_DEPTH` (default 7) **begins with its own planning step** — the worker lays out a scoped
+  sub-plan with `plan_area` and works it to completion; deeper areas work dynamically to bound cost.
 - **Recurse by deepening the tree.** When a worker completes, read its `engagement/areas/<id>/discovered.jsonl`,
   and for each sub-area worth pursuing call `open_area` again with `parentId` set to that area — a child,
   `depth+1` — then dispatch a fresh worker for it. This is how an area of interest becomes a new sub-plan,

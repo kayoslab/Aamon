@@ -84,6 +84,80 @@ export async function reconContextFor(sandbox: RuntimeSandboxSession, terms: str
   return res.exitCode === 0 ? res.stdout.trim() : "";
 }
 
+// ---- per-area sub-plan ----------------------------------------------------
+
+/**
+ * Areas at this depth or shallower begin with an explicit planning step: the
+ * worker lays out a sub-plan (a scoped backlog of concrete tests) before it
+ * tests, so expansion within the area is systematic rather than ad-hoc. Deeper
+ * areas work dynamically, to keep a deep thread from multiplying cost. Env-tunable.
+ */
+export const SUBPLAN_DEPTH = (() => {
+  const v = Number(process.env.AAMON_SUBPLAN_DEPTH);
+  return Number.isFinite(v) && v >= 0 ? Math.floor(v) : 7;
+})();
+
+export const areaPlanPath = (taskId: string) => `${areaDir(taskId)}/plan.jsonl`;
+export const areaPlanMdPath = (taskId: string) => `${areaDir(taskId)}/plan.md`;
+
+export const AreaTaskInput = z.object({
+  id: z.string().optional().describe("Omit to add a new test; pass an id to update one."),
+  test: z.string().describe("A concrete, specific test to run within this area."),
+  status: z.enum(["open", "in_progress", "done", "deferred"]).default("open"),
+  note: z.string().default("").describe("Evidence/result when done; reason + follow-up when deferred."),
+});
+export type AreaTaskInput = z.infer<typeof AreaTaskInput>;
+export type AreaTask = AreaTaskInput & { id: string; updatedAt: string };
+
+export async function readAreaPlan(sandbox: RuntimeSandboxSession, taskId: string): Promise<AreaTask[]> {
+  const raw = await readTextOrNull(sandbox, areaPlanPath(taskId));
+  if (!raw) return [];
+  return raw
+    .split("\n")
+    .filter((l) => l.trim() !== "")
+    .map((l) => JSON.parse(l) as AreaTask);
+}
+
+/**
+ * Create or update the sub-plan for ONE area. Written under that area's own
+ * directory, so it is race-safe: a worker only ever touches the plan of the area
+ * it was dispatched to work.
+ */
+export async function upsertAreaTasks(
+  sandbox: RuntimeSandboxSession,
+  taskId: string,
+  inputs: AreaTaskInput[],
+): Promise<{ tasks: AreaTask[]; open: number }> {
+  await ensureAreaDir(sandbox, taskId);
+  const existing = await readAreaPlan(sandbox, taskId);
+  const byId = new Map(existing.map((t) => [t.id, t]));
+  const now = new Date().toISOString();
+  for (const input of inputs) {
+    const id =
+      input.id && byId.has(input.id)
+        ? input.id
+        : `AT-${(byId.size + 1).toString().padStart(2, "0")}-${Math.random().toString(36).slice(2, 5)}`;
+    byId.set(id, { id, test: input.test, status: input.status, note: input.note ?? "", updatedAt: now });
+  }
+  const tasks = [...byId.values()];
+  await sandbox.writeTextFile({ path: areaPlanPath(taskId), content: tasks.map((t) => JSON.stringify(t)).join("\n") + "\n" });
+  await sandbox.writeTextFile({ path: areaPlanMdPath(taskId), content: renderAreaPlanMd(taskId, tasks) });
+  const open = tasks.filter((t) => t.status === "open" || t.status === "in_progress").length;
+  return { tasks, open };
+}
+
+function renderAreaPlanMd(taskId: string, tasks: AreaTask[]): string {
+  const badge: Record<string, string> = { open: "☐", in_progress: "◐", done: "☑", deferred: "⏸" };
+  const open = tasks.filter((t) => t.status === "open" || t.status === "in_progress").length;
+  const rows = tasks.map((t) => `- ${badge[t.status] ?? "·"} [${t.id}] ${t.test}${t.note ? ` _(${t.note})_` : ""}`).join("\n");
+  return [
+    `# Area sub-plan — ${taskId}`,
+    `Updated: ${new Date().toISOString()} · ${tasks.length} tests · ${open} open`,
+    ``,
+    rows || "_No tests yet._",
+  ].join("\n");
+}
+
 /** Compose the worker's brief file for an area of interest. */
 export function composeBrief(opts: {
   task: PlanTask;
@@ -93,6 +167,25 @@ export function composeBrief(opts: {
   reconExcerpt?: string;
 }): string {
   const { task, hypothesis, briefNotes, originFindingId, reconExcerpt } = opts;
+  const planFirst = task.depth <= SUBPLAN_DEPTH;
+  const planSection = planFirst
+    ? [
+        `## Plan this area first`,
+        `Before you test, lay out a sub-plan for THIS area with \`plan_area\` (areaId = \`${task.id}\`): a short,`,
+        `concrete backlog of the specific tests the hypothesis implies — the vulnerability classes, endpoints,`,
+        `roles, and abuse cases worth checking here. Then work that backlog, moving each test`,
+        `in_progress → done/deferred (evidence in the note) as you go, and add tests with \`plan_area\` when one`,
+        `opens a new angle WITHIN this area. Do not report this area complete until every sub-plan test is done`,
+        `or deferred. (A genuinely DEEPER thread still goes out via \`record_subarea\`, not into this sub-plan.)`,
+        ``,
+      ]
+    : [
+        `## Work directly (deep thread)`,
+        `You are at depth ${task.depth}, beyond the sub-planning threshold of ${SUBPLAN_DEPTH}. Skip a formal`,
+        `sub-plan — work the hypothesis directly and efficiently, record what you prove, and report only a`,
+        `genuinely deeper thread via \`record_subarea\`. Keep this tight; depth is expensive.`,
+        ``,
+      ];
   return [
     `# Area of interest: ${task.area}`,
     ``,
@@ -104,6 +197,7 @@ export function composeBrief(opts: {
     ``,
     ...(briefNotes ? [`## Notes from the orchestrator`, briefNotes, ``] : []),
     ...(reconExcerpt ? [`## Relevant recon (from the shared recon corpus)`, "```", reconExcerpt, "```", ``] : []),
+    ...planSection,
     `## Your contract (read carefully)`,
     `You are investigating THIS ONE area in a fresh context. You do not see the rest of the engagement's history —`,
     `everything you need is in this brief and in the shared sandbox (engagement/recon/, engagement/findings/).`,
@@ -115,7 +209,8 @@ export function composeBrief(opts: {
     `  \`record_finding\` (evidence, reproduction, impact, CVSS/CWE/OWASP). No speculation, no false positives.`,
     `- When you uncover a DEEPER weakness or sub-problem, do NOT chase it here. Report it with \`record_subarea\``,
     `  (parentAreaId = \`${task.id}\`) so the orchestrator can dispatch a dedicated fresh-context deep-dive.`,
-    `- Do NOT call update_plan, open_area, advance_phase, or finalize_engagement — those are the orchestrator's.`,
+    `- \`plan_area\` (your area's own sub-plan) is yours to use; but do NOT call update_plan, open_area,`,
+    `  advance_phase, or finalize_engagement — those belong to the orchestrator.`,
     ``,
     `When finished, return a compact summary: what you proved, what you ruled out, and the sub-areas you reported.`,
   ].join("\n");
