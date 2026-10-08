@@ -145,6 +145,13 @@ matters more than breadth: follow a promising thread all the way down before you
   sub-plan (escalation, chaining, the access it unlocks, adjacent endpoints) — a worker does this with
   `record_subarea`; you, as the orchestrator, with `open_area(originFindingId=…)`. Do not stop at the first
   rung.
+- **Credentials are gold — capture and reuse them.** The moment you or any worker obtains a secret —
+  password, hash, token, key, cookie — record it with `record_credential`; it goes into the central store
+  (`engagement/credentials.jsonl`) that every worker reads. Treat each new credential as a trigger to
+  re-examine the whole surface: spray it against every other host, service, and login in recon (SSH, SMB,
+  RDP, databases, web admin panels, APIs, the app's other roles), and open credential-reuse areas
+  (`open_area`) for the endpoints where it might work. Credential reuse is the primary lateral-movement and
+  access-expansion path — this is how a single foothold becomes control of the whole network.
 - **Keep the loop going until the frontier is empty** — every area `done` or `deferred` — and also update
   each lead's status with `record_lead` (exploited / ruled_out / deferred). The gate requires every lead
   resolved and the coverage gate met before you may advance to reporting.

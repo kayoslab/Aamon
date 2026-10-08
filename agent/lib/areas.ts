@@ -228,6 +228,9 @@ export function composeBrief(opts: {
     `  (parentAreaId = \`${task.id}\`) so the orchestrator can dispatch a dedicated fresh-context deep-dive.`,
     `- \`plan_area\` (your area's own sub-plan) is yours to use; but do NOT call update_plan, open_area,`,
     `  advance_phase, or finalize_engagement — those belong to the orchestrator.`,
+    `- Credentials: read engagement/credentials.jsonl first and TRY any credential that fits a login or service`,
+    `  in this area (reuse is the main way in). The moment you obtain any secret — password, hash, token, key,`,
+    `  cookie — record it with \`record_credential\`; it feeds the shared store every worker uses.`,
     ``,
     `When finished, return a compact summary: what you proved, what you ruled out, and the sub-areas you reported.`,
   ].join("\n");
