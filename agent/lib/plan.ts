@@ -39,8 +39,8 @@ export const PlanTaskInput = z.object({
   id: z.string().optional().describe("Omit to create a new task; pass an existing id to update it."),
   area: z.string().describe("Area/phase or vulnerability class, e.g. 'authz', 'injection', 'ssrf', 'cve:really-simple-security'."),
   task: z.string().describe("The concrete, specific test to perform (not a vague area)."),
-  status: PlanStatus.default("open"),
-  note: z.string().default("").describe("Result/evidence path when done, or the reason + follow-up when deferred."),
+  status: PlanStatus.optional().describe("Omit on an update to keep the task's current status; a new task defaults to open."),
+  note: z.string().optional().describe("Result/evidence path when done, or reason + follow-up when deferred. Omit on an update to keep the current note."),
   parentId: z
     .string()
     .optional()
@@ -147,6 +147,9 @@ export async function upsertTasks(
   for (const input of inputs) {
     const isUpdate = !!(input.id && byId.has(input.id));
     const prev = isUpdate ? byId.get(input.id!) : undefined;
+    const id = isUpdate
+      ? input.id!
+      : `T-${(byId.size + 1).toString().padStart(3, "0")}-${Math.random().toString(36).slice(2, 5)}`;
 
     // Resolve depth from the parent chain. A new parentId recomputes depth; an
     // update with no parentId keeps the task's existing depth.
@@ -155,6 +158,25 @@ export async function upsertTasks(
       const parent = byId.get(input.parentId);
       if (!parent) {
         rejected.push({ area: input.area, task: input.task, reason: `parentId '${input.parentId}' not found in the plan.` });
+        resultIds.push(null);
+        continue;
+      }
+      // Cycle guard: a task may not be made its own ancestor — that would orphan
+      // the subtree from the roots and stack-overflow the tree render.
+      let anc: string | undefined = input.parentId;
+      const walked = new Set<string>();
+      let cyclic = false;
+      while (anc) {
+        if (anc === id) {
+          cyclic = true;
+          break;
+        }
+        if (walked.has(anc)) break;
+        walked.add(anc);
+        anc = byId.get(anc)?.parentId;
+      }
+      if (cyclic) {
+        rejected.push({ area: input.area, task: input.task, reason: `parentId '${input.parentId}' would make the task its own ancestor (cycle).` });
         resultIds.push(null);
         continue;
       }
@@ -176,16 +198,14 @@ export async function upsertTasks(
       continue;
     }
 
-    const id = isUpdate
-      ? input.id!
-      : `T-${(byId.size + 1).toString().padStart(3, "0")}-${Math.random().toString(36).slice(2, 5)}`;
-
     byId.set(id, {
       id,
       area: input.area,
       task: input.task,
-      status: input.status,
-      note: input.note ?? "",
+      // Merge, don't clobber: an update that omits status/note keeps the task's
+      // current values (a new task defaults). This is what makes done/in_progress stick.
+      status: input.status ?? prev?.status ?? "open",
+      note: input.note ?? prev?.note ?? "",
       parentId: input.parentId ?? prev?.parentId,
       originFindingId: input.originFindingId ?? prev?.originFindingId,
       priority: input.priority ?? prev?.priority ?? "medium",
@@ -227,7 +247,10 @@ export function renderPlanMd(tasks: PlanTask[]): string {
     [...xs].sort((a, b) => PRIO_RANK[a.priority] - PRIO_RANK[b.priority] || (a.updatedAt < b.updatedAt ? 1 : -1));
 
   const lines: string[] = [];
+  const seen = new Set<string>();
   const emit = (t: PlanTask, indent: number) => {
+    if (seen.has(t.id)) return; // defence in depth: never recurse a cycle
+    seen.add(t.id);
     const pad = "  ".repeat(indent);
     const origin = t.originFindingId ? ` ←${t.originFindingId}` : "";
     const note = t.note ? ` _(${t.note})_` : "";

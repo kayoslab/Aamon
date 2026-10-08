@@ -103,11 +103,20 @@ export const areaPlanMdPath = (taskId: string) => `${areaDir(taskId)}/plan.md`;
 export const AreaTaskInput = z.object({
   id: z.string().optional().describe("Omit to add a new test; pass an id to update one."),
   test: z.string().describe("A concrete, specific test to run within this area."),
-  status: z.enum(["open", "in_progress", "done", "deferred"]).default("open"),
-  note: z.string().default("").describe("Evidence/result when done; reason + follow-up when deferred."),
+  status: z
+    .enum(["open", "in_progress", "done", "deferred"])
+    .optional()
+    .describe("Omit on an update to keep the test's current status; a new test defaults to open."),
+  note: z.string().optional().describe("Evidence/result when done; reason + follow-up when deferred. Omit on an update to keep the current note."),
 });
 export type AreaTaskInput = z.infer<typeof AreaTaskInput>;
-export type AreaTask = AreaTaskInput & { id: string; updatedAt: string };
+export type AreaTask = {
+  id: string;
+  test: string;
+  status: "open" | "in_progress" | "done" | "deferred";
+  note: string;
+  updatedAt: string;
+};
 
 export async function readAreaPlan(sandbox: RuntimeSandboxSession, taskId: string): Promise<AreaTask[]> {
   const raw = await readTextOrNull(sandbox, areaPlanPath(taskId));
@@ -133,11 +142,19 @@ export async function upsertAreaTasks(
   const byId = new Map(existing.map((t) => [t.id, t]));
   const now = new Date().toISOString();
   for (const input of inputs) {
-    const id =
-      input.id && byId.has(input.id)
-        ? input.id
-        : `AT-${(byId.size + 1).toString().padStart(2, "0")}-${Math.random().toString(36).slice(2, 5)}`;
-    byId.set(id, { id, test: input.test, status: input.status, note: input.note ?? "", updatedAt: now });
+    const isUpdate = !!(input.id && byId.has(input.id));
+    const prev = isUpdate ? byId.get(input.id!) : undefined;
+    const id = isUpdate
+      ? input.id!
+      : `AT-${(byId.size + 1).toString().padStart(2, "0")}-${Math.random().toString(36).slice(2, 5)}`;
+    // Merge, don't clobber: an update that omits status/note keeps current values.
+    byId.set(id, {
+      id,
+      test: input.test,
+      status: input.status ?? prev?.status ?? "open",
+      note: input.note ?? prev?.note ?? "",
+      updatedAt: now,
+    });
   }
   const tasks = [...byId.values()];
   await sandbox.writeTextFile({ path: areaPlanPath(taskId), content: tasks.map((t) => JSON.stringify(t)).join("\n") + "\n" });
